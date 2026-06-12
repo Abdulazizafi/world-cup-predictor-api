@@ -1,0 +1,17 @@
+node_modules
+dist
+.env
+.env.local
+.env.development
+.env.production
+.env.staging
+*.db
+*.db-journal
+.git
+.gitignore
+Dockerfile
+.dockerignore
+npm-debug.log
+check_db.js
+dump_matches.js
+delete_mock_matches.js

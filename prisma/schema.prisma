@@ -1,0 +1,117 @@
+// ─────────────────────────────────────────────────────────────────
+// prisma/schema.prisma
+// Defines the database schema for the 2026 World Cup Predictor.
+// Provider: SQLite for local dev — swap to postgresql for production.
+// ─────────────────────────────────────────────────────────────────
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ─────────────────────────────────────────────────────────────────
+// USER
+// Privacy-first: only username is stored — no email, no PII.
+// ─────────────────────────────────────────────────────────────────
+model User {
+  id           String        @id @default(uuid())
+  username     String        @unique       // Unique display name, 3-20 chars
+  passwordHash String                      // bcrypt hash, never stored plain
+  createdAt    DateTime      @default(now())
+
+  // Relations
+  createdGroups Group[]      @relation("GroupCreator")
+  memberships   GroupMember[]
+  predictions   Prediction[]
+}
+
+// ─────────────────────────────────────────────────────────────────
+// GROUP
+// A private league. Invite code is the only way to join.
+// ─────────────────────────────────────────────────────────────────
+model Group {
+  id         String        @id @default(uuid())
+  name       String                          // Display name of the league
+  inviteCode String        @unique           // 6-char uppercase alphanumeric
+  creatorId  String
+  createdAt  DateTime      @default(now())
+
+  // Relations
+  creator    User          @relation("GroupCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  members    GroupMember[]
+}
+
+// ─────────────────────────────────────────────────────────────────
+// GROUP MEMBER
+// Join table between User and Group.
+// Composite unique key prevents duplicate membership.
+// ─────────────────────────────────────────────────────────────────
+model GroupMember {
+  id       String   @id @default(uuid())
+  groupId  String
+  userId   String
+  joinedAt DateTime @default(now())
+
+  // Relations
+  group    Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])  // One membership per (group, user) pair
+  @@index([groupId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────
+// MATCH
+// Sourced from worldcup26.ir via SyncService.
+// externalId links to the upstream API's match identifier.
+// ─────────────────────────────────────────────────────────────────
+model Match {
+  id          String       @id @default(uuid())
+  externalId  String       @unique           // worldcup26.ir match ID for upserts
+  teamA       String                         // e.g. "USA"
+  teamB       String                         // e.g. "Mexico"
+  teamAFlag   String?                        // emoji or URL flag
+  teamBFlag   String?
+  matchTime   DateTime                       // UTC kickoff timestamp
+  status      String       @default("PENDING") // PENDING | LIVE | FINISHED
+  scoreA      Int?                           // null until FINISHED
+  scoreB      Int?
+  stage       String                         // "Group Stage", "Round of 16", etc.
+  venue       String?                        // Stadium name
+
+  // Relations
+  predictions Prediction[]
+
+  @@index([status])
+  @@index([matchTime])
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PREDICTION
+// One prediction per user per match (enforced by @@unique).
+// Upserted via POST /api/predictions before kickoff.
+// pointsEarned is set by the Points Engine after FINISHED.
+// ─────────────────────────────────────────────────────────────────
+model Prediction {
+  id              String   @id @default(uuid())
+  userId          String
+  matchId         String
+  predictedScoreA Int                        // Predicted goals for Team A
+  predictedScoreB Int                        // Predicted goals for Team B
+  pointsEarned    Int      @default(0)       // 0 | 3 | 5 — set by pointsEngine
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt        // Auto-managed by Prisma
+
+  // Relations
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  match           Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, matchId])  // One prediction per user per match
+  @@index([userId])
+  @@index([matchId])
+}
