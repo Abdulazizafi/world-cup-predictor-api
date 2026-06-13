@@ -12,8 +12,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install clean production dependencies
-RUN npm ci
+# Install all dependencies (including devDependencies like TypeScript to build)
+RUN npm ci --include=dev
 
 # Copy all source files
 COPY . .
