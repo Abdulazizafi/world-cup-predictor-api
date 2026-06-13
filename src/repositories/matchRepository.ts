@@ -54,6 +54,7 @@ export const getAllMatches = async (
               predictedScoreA: true,
               predictedScoreB: true,
               pointsEarned: true,
+              useDoublePoints: true,
             },
           },
         }

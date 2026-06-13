@@ -68,6 +68,11 @@ export const calculatePoints = async (
     }
     // else: wrong outcome → 0 points (already initialised)
 
+    // Double the points if X2 was used on this prediction
+    if (prediction.useDoublePoints) {
+      pointsEarned *= 2;
+    }
+
     return { id: prediction.id, pointsEarned };
   });
 

@@ -104,7 +104,8 @@ model Prediction {
   matchId         String
   predictedScoreA Int                        // Predicted goals for Team A
   predictedScoreB Int                        // Predicted goals for Team B
-  pointsEarned    Int      @default(0)       // 0 | 3 | 5 — set by pointsEngine
+  pointsEarned    Int      @default(0)       // 0 | 40 | 100 — set by pointsEngine
+  useDoublePoints Boolean  @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt        // Auto-managed by Prisma
 

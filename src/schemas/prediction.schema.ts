@@ -29,6 +29,8 @@ export const SubmitPredictionSchema = z.object({
     .int('Score must be a whole number.')
     .min(0, 'Score cannot be negative.')
     .max(30, 'Score seems unrealistically high.'),
+
+  useDoublePoints: z.boolean().optional(),
 });
 
 // Inferred TypeScript type

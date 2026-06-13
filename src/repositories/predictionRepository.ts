@@ -31,18 +31,21 @@ export const upsertPrediction = async (data: {
   matchId: string;
   predictedScoreA: number;
   predictedScoreB: number;
+  useDoublePoints?: boolean;
 }): Promise<Prediction> => {
   return prisma.prediction.upsert({
     where: { userId_matchId: { userId: data.userId, matchId: data.matchId } },
     update: {
       predictedScoreA: data.predictedScoreA,
       predictedScoreB: data.predictedScoreB,
+      useDoublePoints: data.useDoublePoints,
     },
     create: {
       userId: data.userId,
       matchId: data.matchId,
       predictedScoreA: data.predictedScoreA,
       predictedScoreB: data.predictedScoreB,
+      useDoublePoints: data.useDoublePoints ?? false,
     },
   });
 };
@@ -73,4 +76,21 @@ export const bulkUpdatePoints = async (
       }),
     ),
   );
+};
+
+/**
+ * Count how many double points predictions a user has currently active,
+ * optionally excluding a specific matchId (e.g. when updating).
+ */
+export const countDoublePointsPredictions = async (
+  userId: string,
+  excludeMatchId?: string,
+): Promise<number> => {
+  return prisma.prediction.count({
+    where: {
+      userId,
+      useDoublePoints: true,
+      NOT: excludeMatchId ? { matchId: excludeMatchId } : undefined,
+    },
+  });
 };

@@ -30,6 +30,7 @@ export const submitOrUpdatePrediction = async (
   matchId: string,
   predictedScoreA: number,
   predictedScoreB: number,
+  useDoublePoints?: boolean,
 ) => {
   // 1. Resolve the match
   const match = await matchRepo.findMatchById(matchId);
@@ -56,12 +57,21 @@ export const submitOrUpdatePrediction = async (
     );
   }
 
+  // Validate the Double Points limit (max 5 tokens)
+  if (useDoublePoints === true) {
+    const currentX2Count = await predictionRepo.countDoublePointsPredictions(userId, matchId);
+    if (currentX2Count >= 5) {
+      throw new AppError('You can only apply Double Points (x2) to a maximum of 5 matches.', 400);
+    }
+  }
+
   // 3. Upsert the prediction
   const prediction = await predictionRepo.upsertPrediction({
     userId,
     matchId,
     predictedScoreA,
     predictedScoreB,
+    useDoublePoints,
   });
 
   return {
@@ -70,6 +80,7 @@ export const submitOrUpdatePrediction = async (
     predictedScoreA: prediction.predictedScoreA,
     predictedScoreB: prediction.predictedScoreB,
     pointsEarned: prediction.pointsEarned,
+    useDoublePoints: prediction.useDoublePoints,
     createdAt: prediction.createdAt,
     updatedAt: prediction.updatedAt,
     match: {
@@ -80,3 +91,4 @@ export const submitOrUpdatePrediction = async (
     },
   };
 };
+
