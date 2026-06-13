@@ -196,11 +196,11 @@ const getTeamName = (match: WC26ApiMatch, side: 'home' | 'away'): string => {
   if (side === 'home') {
     if (match.home_team_name_en) return match.home_team_name_en;
     const t = match.home_team ?? match.home;
-    return t?.name ?? t?.name_code ?? 'TBD';
+    return t?.name ?? (t as any)?.name_code ?? (t as any)?.code ?? 'TBD';
   } else {
     if (match.away_team_name_en) return match.away_team_name_en;
     const t = match.away_team ?? match.away;
-    return t?.name ?? t?.name_code ?? 'TBD';
+    return t?.name ?? (t as any)?.name_code ?? (t as any)?.code ?? 'TBD';
   }
 };
 
