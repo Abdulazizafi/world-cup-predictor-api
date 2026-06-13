@@ -1,5 +1,10 @@
-# Use official Node.js 20 lightweight Alpine image
-FROM node:20-alpine
+# Use official Node.js 20 lightweight Debian-slim image
+FROM node:20-slim
+
+# Install dependencies needed for Prisma and SSL connections
+RUN apt-get update -y && apt-get install -y openssl ca-certificates
+
+
 
 # Set working directory
 WORKDIR /app
