@@ -8,8 +8,8 @@
  * and bulk-updates the database in a single transaction.
  *
  * Scoring Rules:
- *   Exact score match  (e.g. predicted 2-1, result 2-1) → 5 points
- *   Correct outcome    (e.g. predicted 3-0, result 1-0) → 3 points
+ *   Exact score match  (e.g. predicted 2-1, result 2-1) → 100 points
+ *   Correct outcome    (e.g. predicted 3-0, result 1-0) → 40 points
  *   Wrong prediction                                    → 0 points
  * ─────────────────────────────────────────────────────────────────
  */
@@ -61,10 +61,10 @@ export const calculatePoints = async (
       prediction.predictedScoreB === actualScoreB
     ) {
       // Perfect: exact scoreline match
-      pointsEarned = 5;
+      pointsEarned = 100;
     } else if (predictedOutcome === actualOutcome) {
       // Good: correct winner/draw but wrong scores
-      pointsEarned = 3;
+      pointsEarned = 40;
     }
     // else: wrong outcome → 0 points (already initialised)
 
