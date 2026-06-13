@@ -338,13 +338,13 @@ export const syncMatches = async (): Promise<number> => {
     }
 
     if (!fetchSuccess) {
-      console.warn('⚠️  SyncService: Could not fetch matches from any endpoint. Falling back to local mock seeding...');
-      apiMatches = DEFAULT_MOCKED_WC26_MATCHES;
+      console.warn('⚠️  SyncService: Could not fetch matches from any endpoint. Skipping sync.');
+      return 0;
     }
   } catch (err) {
     const axiosErr = err as AxiosError;
-    console.error(`❌ SyncService: API fetch failed — ${axiosErr.message}. Falling back to local mock seeding...`);
-    apiMatches = DEFAULT_MOCKED_WC26_MATCHES;
+    console.error(`❌ SyncService: API fetch failed — ${axiosErr.message}. Skipping sync.`);
+    return 0;
   }
 
   console.log(`🔄 SyncService: Fetched ${apiMatches.length} matches from worldcup26.ir`);
