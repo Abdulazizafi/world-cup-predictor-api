@@ -300,6 +300,7 @@ const getStage = (match: WC26ApiMatch): string => {
  */
 export const syncMatches = async (): Promise<number> => {
   let apiMatches: WC26ApiMatch[] = [];
+  let isFallback = false;
 
   try {
     // Try the most likely endpoint paths (API may expose different routes)
@@ -338,16 +339,61 @@ export const syncMatches = async (): Promise<number> => {
     }
 
     if (!fetchSuccess) {
-      console.warn('⚠️  SyncService: Could not fetch matches from any endpoint. Skipping sync.');
-      return 0;
+      console.warn('⚠️  SyncService: Could not fetch matches from any endpoint. Falling back to local matches seed.');
+      isFallback = true;
+      try {
+        const localMatches = require('../config/initialMatches.json');
+        apiMatches = localMatches.map((m: any) => ({
+          id: m.externalId,
+          home_team: { name: m.teamA, flag: m.teamAFlag },
+          away_team: { name: m.teamB, flag: m.teamBFlag },
+          local_date: m.matchTime,
+          status: m.status,
+          home_score: m.scoreA,
+          away_score: m.scoreB,
+          stage_name: m.stage,
+          venue: m.venue,
+        }));
+      } catch (fallbackErr: any) {
+        console.error(`❌ SyncService: Local fallback failed — ${fallbackErr.message}`);
+        return 0;
+      }
     }
   } catch (err) {
     const axiosErr = err as AxiosError;
-    console.error(`❌ SyncService: API fetch failed — ${axiosErr.message}. Skipping sync.`);
-    return 0;
+    console.warn(`⚠️  SyncService: API fetch failed — ${axiosErr.message}. Falling back to local matches seed.`);
+    isFallback = true;
+    try {
+      const localMatches = require('../config/initialMatches.json');
+      apiMatches = localMatches.map((m: any) => ({
+        id: m.externalId,
+        home_team: { name: m.teamA, flag: m.teamAFlag },
+        away_team: { name: m.teamB, flag: m.teamBFlag },
+        local_date: m.matchTime,
+        status: m.status,
+        home_score: m.scoreA,
+        away_score: m.scoreB,
+        stage_name: m.stage,
+        venue: m.venue,
+      }));
+    } catch (fallbackErr: any) {
+      console.error(`❌ SyncService: Local fallback failed — ${fallbackErr.message}`);
+      return 0;
+    }
   }
 
-  console.log(`🔄 SyncService: Fetched ${apiMatches.length} matches from worldcup26.ir`);
+  console.log(`🔄 SyncService: Loaded ${apiMatches.length} matches (source: API/fallback)`);
+
+  if (isFallback) {
+    const dbCount = await matchRepo.countMatches();
+    if (dbCount === 104) {
+      console.log('🔄 SyncService: DB already seeded with 104 matches. Skipping fallback upsert loop.');
+      return 0;
+    }
+  }
+
+  // Fetch all existing matches in a single query to avoid N+1 query performance problems
+  const existingMatchesMap = await matchRepo.getAllMatchesAsMap();
 
   let syncedCount = 0;
   const newlyFinished: Array<{ id: string; scoreA: number; scoreB: number }> = [];
@@ -357,33 +403,83 @@ export const syncMatches = async (): Promise<number> => {
     const newStatus = normaliseStatus(apiMatch);
     const scoreA = parseScore(apiMatch.home_score);
     const scoreB = parseScore(apiMatch.away_score);
+    const matchTime = parseMatchTime(apiMatch);
+    const teamA = getTeamName(apiMatch, 'home');
+    const teamB = getTeamName(apiMatch, 'away');
+    const teamAFlag = getTeamFlag(apiMatch, 'home');
+    const teamBFlag = getTeamFlag(apiMatch, 'away');
+    const stage = getStage(apiMatch);
+    const venue = apiMatch.venue ?? apiMatch.stadium?.name ?? null;
 
-    // Check the previous status to detect transitions to FINISHED
-    const existing: Match | null = await matchRepo.findMatchByExternalId(externalId);
+    // Check the previous status to detect transitions to FINISHED from our in-memory cache
+    const existing = existingMatchesMap.get(externalId) || null;
     const wasFinished = existing?.status === 'FINISHED';
 
-    // Upsert the match record
+    // Preserve database values if syncing from local fallback/stale sources
+    let finalStatus = newStatus;
+    let finalScoreA = scoreA;
+    let finalScoreB = scoreB;
+
+    if (existing && (existing.status === 'FINISHED' || existing.status === 'LIVE')) {
+      if (newStatus === 'PENDING') {
+        finalStatus = existing.status;
+        finalScoreA = existing.scoreA;
+        finalScoreB = existing.scoreB;
+      }
+    }
+
+    // Performance Optimization: Skip database write if no fields have changed
+    if (existing) {
+      const timeMatches = existing.matchTime.getTime() === matchTime.getTime();
+      const statusMatches = existing.status === finalStatus;
+      const scoreAMatches = existing.scoreA === finalScoreA;
+      const scoreBMatches = existing.scoreB === finalScoreB;
+      const teamAMatches = existing.teamA === teamA;
+      const teamBMatches = existing.teamB === teamB;
+      const flagAMatches = existing.teamAFlag === teamAFlag;
+      const flagBMatches = existing.teamBFlag === teamBFlag;
+      const stageMatches = existing.stage === stage;
+      const venueMatches = existing.venue === venue;
+
+      if (
+        timeMatches &&
+        statusMatches &&
+        scoreAMatches &&
+        scoreBMatches &&
+        teamAMatches &&
+        teamBMatches &&
+        flagAMatches &&
+        flagBMatches &&
+        stageMatches &&
+        venueMatches
+      ) {
+        // No changes, skip database write
+        continue;
+      }
+    }
+
+    // Upsert the match record since details have changed
     const upserted = await matchRepo.upsertMatch({
       externalId,
-      teamA: getTeamName(apiMatch, 'home'),
-      teamB: getTeamName(apiMatch, 'away'),
-      teamAFlag: getTeamFlag(apiMatch, 'home'),
-      teamBFlag: getTeamFlag(apiMatch, 'away'),
-      matchTime: parseMatchTime(apiMatch),
-      status: newStatus,
-      scoreA,
-      scoreB,
-      stage: getStage(apiMatch),
-      venue: apiMatch.venue ?? apiMatch.stadium?.name ?? null,
+      teamA,
+      teamB,
+      teamAFlag,
+      teamBFlag,
+      matchTime,
+      status: finalStatus,
+      scoreA: finalScoreA,
+      scoreB: finalScoreB,
+      stage,
+      venue,
     });
 
     syncedCount++;
 
     // Detect fresh FINISHED transitions to trigger the points engine
-    if (newStatus === 'FINISHED' && !wasFinished) {
-      if (scoreA !== null && scoreA !== undefined &&
-          scoreB !== null && scoreB !== undefined) {
-        newlyFinished.push({ id: upserted.id, scoreA, scoreB });
+    if (finalStatus === 'FINISHED' && !wasFinished) {
+      if (finalScoreA !== null && finalScoreA !== undefined &&
+          finalScoreB !== null && finalScoreB !== undefined) {
+        newlyFinished.push({ id: upserted.id, scoreA: finalScoreA, scoreB: finalScoreB });
       }
     }
   }

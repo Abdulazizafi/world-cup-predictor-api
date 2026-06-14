@@ -140,3 +140,22 @@ export const updateMatchScoreAndStatus = async (
   });
 };
 
+/**
+ * Count the total number of matches in the database.
+ * Used by the SyncService to check if initial seeding is complete.
+ */
+export const countMatches = async (): Promise<number> => {
+  return prisma.match.count();
+};
+
+/**
+ * Retrieve all matches and return them as a Map keyed by externalId.
+ * Used by the SyncService to run in-memory comparisons and avoid N+1 queries.
+ */
+export const getAllMatchesAsMap = async (): Promise<Map<string, Match>> => {
+  const matches = await prisma.match.findMany();
+  return new Map(matches.map((m) => [m.externalId, m]));
+};
+
+
+
