@@ -119,3 +119,24 @@ export const findLiveMatches = async (): Promise<Match[]> => {
     where: { status: 'LIVE' },
   });
 };
+
+/**
+ * Manually update a match's scores and status.
+ * Called by the Admin controller to override API values.
+ */
+export const updateMatchScoreAndStatus = async (
+  id: string,
+  scoreA: number | null,
+  scoreB: number | null,
+  status: string,
+): Promise<Match> => {
+  return prisma.match.update({
+    where: { id },
+    data: {
+      scoreA,
+      scoreB,
+      status,
+    },
+  });
+};
+
