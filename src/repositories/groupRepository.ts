@@ -329,6 +329,7 @@ export const getGroupInsights = async (
 ): Promise<{
   averagePoints: number;
   maxPointsEarned: number;
+  maxPointsUsername: string | null;
   upsetMatch: { teamA: string; teamB: string; averagePoints: number } | null;
 }> => {
   // 1. Get all members in the group
@@ -339,7 +340,7 @@ export const getGroupInsights = async (
   const userIds = memberIds.map((m) => m.userId);
 
   if (userIds.length === 0) {
-    return { averagePoints: 0, maxPointsEarned: 0, upsetMatch: null };
+    return { averagePoints: 0, maxPointsEarned: 0, maxPointsUsername: null, upsetMatch: null };
   }
 
   // 2. Average points in league
@@ -351,9 +352,13 @@ export const getGroupInsights = async (
   const maxPrediction = await prisma.prediction.findFirst({
     where: { userId: { in: userIds }, match: { status: 'FINISHED' } },
     orderBy: { pointsEarned: 'desc' },
-    select: { pointsEarned: true },
+    select: {
+      pointsEarned: true,
+      user: { select: { username: true } },
+    },
   });
   const maxPointsEarned = maxPrediction?.pointsEarned || 0;
+  const maxPointsUsername = maxPrediction?.user?.username || null;
 
   // 4. Upset Match (finished match with the lowest average points earned)
   const finishedMatches = await prisma.match.findMany({
@@ -386,6 +391,7 @@ export const getGroupInsights = async (
   return {
     averagePoints,
     maxPointsEarned,
+    maxPointsUsername,
     upsetMatch,
   };
 };
