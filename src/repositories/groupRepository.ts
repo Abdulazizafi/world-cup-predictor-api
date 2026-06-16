@@ -95,16 +95,33 @@ export const getLeaderboard = async (
     username: string;
     totalPoints: number;
     rank: number;
+    trend: 'UP' | 'DOWN' | 'SAME';
+    exactCount: number;
+    outcomeCount: number;
+    incorrectCount: number;
+    doubleUsed: number;
   }>
 > => {
-  // Fetch all members with their predictions' points
+  // 1. Get latest finished match to compute rank shifts/trends
+  const latestFinishedMatch = await prisma.match.findFirst({
+    where: { status: 'FINISHED' },
+    orderBy: { matchTime: 'desc' },
+    select: { id: true },
+  });
+  const latestMatchId = latestFinishedMatch?.id || null;
+
+  // 2. Fetch all members with predictions and match status
   const members = await prisma.groupMember.findMany({
     where: { groupId },
     include: {
       user: {
         include: {
           predictions: {
-            select: { pointsEarned: true },
+            include: {
+              match: {
+                select: { status: true },
+              },
+            },
           },
         },
       },
@@ -112,19 +129,80 @@ export const getLeaderboard = async (
     orderBy: { joinedAt: 'asc' },
   });
 
-  // Aggregate points and sort
-  const leaderboard = members
-    .map((m) => ({
+  // 3. Compute stats, total points, and previous points
+  const memberData = members.map((m) => {
+    let exactCount = 0;
+    let outcomeCount = 0;
+    let incorrectCount = 0;
+    let doubleUsed = 0;
+    let totalPoints = 0;
+    let prevPoints = 0;
+
+    for (const p of m.user.predictions) {
+      if (p.useDoublePoints) {
+        doubleUsed++;
+      }
+      if (p.match.status === 'FINISHED') {
+        totalPoints += p.pointsEarned;
+        if (latestMatchId && p.matchId === latestMatchId) {
+          // Exclude latest match points for trend baseline
+        } else {
+          prevPoints += p.pointsEarned;
+        }
+
+        if (p.pointsEarned === 100 || p.pointsEarned === 200) {
+          exactCount++;
+        } else if (p.pointsEarned === 40 || p.pointsEarned === 80) {
+          outcomeCount++;
+        } else if (p.pointsEarned === 0) {
+          incorrectCount++;
+        }
+      }
+    }
+
+    return {
       userId: m.userId,
       username: m.user.username,
-      totalPoints: m.user.predictions.reduce(
-        (sum, p) => sum + (p.pointsEarned ?? 0),
-        0,
-      ),
-      rank: 0, // assigned after sort
-    }))
+      totalPoints,
+      prevPoints,
+      exactCount,
+      outcomeCount,
+      incorrectCount,
+      doubleUsed,
+    };
+  });
+
+  // 4. Determine previous ranks
+  const prevRankings = [...memberData]
+    .sort((a, b) => b.prevPoints - a.prevPoints)
+    .map((entry, index) => ({ userId: entry.userId, rank: index + 1 }));
+  const prevRankMap = new Map(prevRankings.map((r) => [r.userId, r.rank]));
+
+  // 5. Sort by current points and assign rank and trend
+  const leaderboard = memberData
     .sort((a, b) => b.totalPoints - a.totalPoints)
-    .map((entry, index) => ({ ...entry, rank: index + 1 }));
+    .map((entry, index) => {
+      const currentRank = index + 1;
+      const prevRank = prevRankMap.get(entry.userId) || currentRank;
+      
+      let trend: 'UP' | 'DOWN' | 'SAME' = 'SAME';
+      if (latestMatchId) { // Only calculate trends if at least one match has finished
+        if (prevRank > currentRank) trend = 'UP';
+        else if (prevRank < currentRank) trend = 'DOWN';
+      }
+
+      return {
+        userId: entry.userId,
+        username: entry.username,
+        totalPoints: entry.totalPoints,
+        rank: currentRank,
+        trend,
+        exactCount: entry.exactCount,
+        outcomeCount: entry.outcomeCount,
+        incorrectCount: entry.incorrectCount,
+        doubleUsed: entry.doubleUsed,
+      };
+    });
 
   return leaderboard;
 };
@@ -205,4 +283,109 @@ export const getGroupActivity = async (
       createdAt: p.createdAt,
     };
   });
+};
+
+/**
+ * Fetch a user's predictions for matches that have already kicked off.
+ * Used for head-to-head comparison without allowing anti-cheat bypass.
+ */
+export const getUserPredictionsForComparison = async (
+  userId: string,
+): Promise<
+  Array<{
+    matchId: string;
+    predictedScoreA: number;
+    predictedScoreB: number;
+    pointsEarned: number;
+    useDoublePoints: boolean;
+  }>
+> => {
+  const now = new Date();
+
+  const predictions = await prisma.prediction.findMany({
+    where: {
+      userId,
+      match: {
+        matchTime: { lte: now }, // only matches that have kicked off
+      },
+    },
+    select: {
+      matchId: true,
+      predictedScoreA: true,
+      predictedScoreB: true,
+      pointsEarned: true,
+      useDoublePoints: true,
+    },
+  });
+
+  return predictions;
+};
+
+/**
+ * Get group-level statistics and league-wide insights.
+ */
+export const getGroupInsights = async (
+  groupId: string,
+): Promise<{
+  averagePoints: number;
+  maxPointsEarned: number;
+  upsetMatch: { teamA: string; teamB: string; averagePoints: number } | null;
+}> => {
+  // 1. Get all members in the group
+  const memberIds = await prisma.groupMember.findMany({
+    where: { groupId },
+    select: { userId: true },
+  });
+  const userIds = memberIds.map((m) => m.userId);
+
+  if (userIds.length === 0) {
+    return { averagePoints: 0, maxPointsEarned: 0, upsetMatch: null };
+  }
+
+  // 2. Average points in league
+  const leaderboard = await getLeaderboard(groupId);
+  const totalLeaguePoints = leaderboard.reduce((sum, u) => sum + u.totalPoints, 0);
+  const averagePoints = leaderboard.length > 0 ? Math.round(totalLeaguePoints / leaderboard.length) : 0;
+
+  // 3. Max points earned in a single prediction
+  const maxPrediction = await prisma.prediction.findFirst({
+    where: { userId: { in: userIds }, match: { status: 'FINISHED' } },
+    orderBy: { pointsEarned: 'desc' },
+    select: { pointsEarned: true },
+  });
+  const maxPointsEarned = maxPrediction?.pointsEarned || 0;
+
+  // 4. Upset Match (finished match with the lowest average points earned)
+  const finishedMatches = await prisma.match.findMany({
+    where: { status: 'FINISHED' },
+    select: { id: true, teamA: true, teamB: true },
+  });
+
+  let upsetMatch: { teamA: string; teamB: string; averagePoints: number } | null = null;
+  let lowestAverage = 999;
+
+  for (const match of finishedMatches) {
+    const predictions = await prisma.prediction.findMany({
+      where: { matchId: match.id, userId: { in: userIds } },
+      select: { pointsEarned: true },
+    });
+
+    if (predictions.length > 0) {
+      const avg = predictions.reduce((sum, p) => sum + p.pointsEarned, 0) / predictions.length;
+      if (avg < lowestAverage) {
+        lowestAverage = avg;
+        upsetMatch = {
+          teamA: match.teamA,
+          teamB: match.teamB,
+          averagePoints: Math.round(avg * 10) / 10,
+        };
+      }
+    }
+  }
+
+  return {
+    averagePoints,
+    maxPointsEarned,
+    upsetMatch,
+  };
 };

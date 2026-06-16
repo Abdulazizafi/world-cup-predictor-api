@@ -167,3 +167,39 @@ export const getGroupActivity = async (
 
   return groupRepo.getGroupActivity(groupId, limit, offset);
 };
+
+/**
+ * Get dynamic comparison data of a target user's predictions for head-to-head views.
+ */
+export const comparePredictions = async (
+  groupId: string,
+  requestingUserId: string,
+  targetUserId: string,
+) => {
+  const reqIsMember = await groupRepo.isMember(groupId, requestingUserId);
+  if (!reqIsMember) {
+    throw new AppError('You are not a member of this group.', 403);
+  }
+
+  const targetIsMember = await groupRepo.isMember(groupId, targetUserId);
+  if (!targetIsMember) {
+    throw new AppError('The target user is not a member of this group.', 404);
+  }
+
+  return groupRepo.getUserPredictionsForComparison(targetUserId);
+};
+
+/**
+ * Get league-wide insights and statistics.
+ */
+export const getGroupInsights = async (
+  groupId: string,
+  requestingUserId: string,
+) => {
+  const isMember = await groupRepo.isMember(groupId, requestingUserId);
+  if (!isMember) {
+    throw new AppError('You are not a member of this group.', 403);
+  }
+
+  return groupRepo.getGroupInsights(groupId);
+};

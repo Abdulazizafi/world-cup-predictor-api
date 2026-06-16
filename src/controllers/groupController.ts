@@ -105,3 +105,52 @@ export const getGroupActivity = async (
     next(err);
   }
 };
+
+/**
+ * GET /api/groups/:groupId/compare/:userId
+ * Returns a user's past predictions for match comparison.
+ */
+export const comparePredictions = async (
+  req: Request<{ groupId: string; userId: string }>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const predictions = await groupService.comparePredictions(
+      req.params.groupId,
+      req.user!.id,
+      req.params.userId,
+    );
+
+    res.status(200).json({
+      status: 'success',
+      data: { predictions },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/groups/:groupId/insights
+ * Returns league-wide statistics and upsets summary.
+ */
+export const getGroupInsights = async (
+  req: Request<{ groupId: string }>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const insights = await groupService.getGroupInsights(
+      req.params.groupId,
+      req.user!.id,
+    );
+
+    res.status(200).json({
+      status: 'success',
+      data: { insights },
+    });
+  } catch (err) {
+    next(err);
+  }
+};

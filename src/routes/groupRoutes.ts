@@ -25,7 +25,10 @@ router.post('/join', validate(JoinGroupSchema), groupController.joinGroup);
 // GET /api/groups/:groupId/leaderboard
 router.get('/:groupId/leaderboard', groupController.getLeaderboard);
 
-// GET /api/groups/:groupId/activity
-router.get('/:groupId/activity', groupController.getGroupActivity);
+// GET /api/groups/:groupId/compare/:userId
+router.get('/:groupId/compare/:userId', groupController.comparePredictions);
+
+// GET /api/groups/:groupId/insights
+router.get('/:groupId/insights', groupController.getGroupInsights);
 
 export default router;
