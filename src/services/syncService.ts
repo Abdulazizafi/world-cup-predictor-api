@@ -172,21 +172,32 @@ const parseScore = (score: string | number | null | undefined): number | null =>
   return isNaN(num) ? null : num;
 };
 
-/**
- * Normalise the external API's status string to our internal enum.
- */
 const normaliseStatus = (match: WC26ApiMatch): string => {
-  if (match.time_elapsed) {
-    const elapsed = match.time_elapsed.toLowerCase();
-    if (elapsed === 'finished' || match.finished === 'TRUE') return 'FINISHED';
-    if (elapsed === 'live' || elapsed.includes('min')) return 'LIVE';
-    return 'PENDING';
+  const finishedVal = String(match.finished).toUpperCase();
+  const elapsed = match.time_elapsed ? match.time_elapsed.toLowerCase() : '';
+
+  if (elapsed === 'finished' || finishedVal === 'TRUE') {
+    return 'FINISHED';
   }
+  if (elapsed === 'live' || elapsed.includes('min') || elapsed.includes('half')) {
+    return 'LIVE';
+  }
+
+  // Fallback: If kickoff time has passed but status is still marked as scheduled/notstarted,
+  // automatically mark it as LIVE so it displays correctly on the user dashboard
+  const matchTime = parseMatchTime(match);
+  const now = new Date();
+  if (now >= matchTime) {
+    return 'LIVE';
+  }
+
   const apiStatus = match.status;
-  if (!apiStatus) return 'PENDING';
-  const s = apiStatus.toLowerCase();
-  if (s.includes('live') || s.includes('progress') || s.includes('in_play')) return 'LIVE';
-  if (s.includes('finished') || s.includes('completed') || s.includes('ft') || s.includes('full')) return 'FINISHED';
+  if (apiStatus) {
+    const s = apiStatus.toLowerCase();
+    if (s.includes('live') || s.includes('progress') || s.includes('in_play')) return 'LIVE';
+    if (s.includes('finished') || s.includes('completed') || s.includes('ft') || s.includes('full')) return 'FINISHED';
+  }
+
   return 'PENDING';
 };
 
@@ -321,7 +332,7 @@ export const syncMatches = async (): Promise<number> => {
     for (const url of endpoints) {
       try {
         const response = await axios.get<WC26ApiResponse | WC26ApiMatch[]>(url, {
-          timeout: 15000,
+          timeout: 25000,
           httpsAgent,
           headers: { 
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -393,13 +404,7 @@ export const syncMatches = async (): Promise<number> => {
 
   console.log(`🔄 SyncService: Loaded ${apiMatches.length} matches (source: API/fallback)`);
 
-  if (isFallback) {
-    const dbCount = await matchRepo.countMatches();
-    if (dbCount === 104) {
-      console.log('🔄 SyncService: DB already seeded with 104 matches. Skipping fallback upsert loop.');
-      return 0;
-    }
-  }
+  // Fallback check omitted to allow status normalization to run on local seed fallbacks
 
   // Fetch all existing matches in a single query to avoid N+1 query performance problems
   const existingMatchesMap = await matchRepo.getAllMatchesAsMap();
@@ -429,11 +434,19 @@ export const syncMatches = async (): Promise<number> => {
     let finalScoreA = scoreA;
     let finalScoreB = scoreB;
 
-    if (existing && (existing.status === 'FINISHED' || existing.status === 'LIVE')) {
-      if (newStatus === 'PENDING') {
-        finalStatus = existing.status;
-        finalScoreA = existing.scoreA;
-        finalScoreB = existing.scoreB;
+    if (existing) {
+      if (existing.status === 'FINISHED') {
+        if (newStatus !== 'FINISHED') {
+          finalStatus = 'FINISHED';
+          finalScoreA = existing.scoreA;
+          finalScoreB = existing.scoreB;
+        }
+      } else if (existing.status === 'LIVE') {
+        if (newStatus === 'PENDING') {
+          finalStatus = 'LIVE';
+          finalScoreA = existing.scoreA;
+          finalScoreB = existing.scoreB;
+        }
       }
     }
 
