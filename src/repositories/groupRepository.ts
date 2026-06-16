@@ -136,6 +136,8 @@ export const getLeaderboard = async (
  */
 export const getGroupActivity = async (
   groupId: string,
+  limit?: number,
+  offset?: number,
 ): Promise<
   Array<{
     username: string;
@@ -146,6 +148,10 @@ export const getGroupActivity = async (
     status: string;
     predictedScoreA: number | null; // null = hidden (pre-kickoff)
     predictedScoreB: number | null;
+    pointsEarned: number;
+    useDoublePoints: boolean;
+    scoreA: number | null;
+    scoreB: number | null;
     createdAt: Date;
   }>
 > => {
@@ -169,11 +175,14 @@ export const getGroupActivity = async (
           teamB: true,
           matchTime: true,
           status: true,
+          scoreA: true,
+          scoreB: true,
         },
       },
     },
     orderBy: { createdAt: 'desc' },
-    take: 20, // Limit to last 20 actions
+    take: limit ?? 20,
+    skip: offset ?? 0,
   });
 
   return predictions.map((p) => {
@@ -189,6 +198,10 @@ export const getGroupActivity = async (
       status: p.match.status,
       predictedScoreA: isUpcoming ? null : p.predictedScoreA,
       predictedScoreB: isUpcoming ? null : p.predictedScoreB,
+      pointsEarned: isUpcoming ? 0 : p.pointsEarned,
+      useDoublePoints: p.useDoublePoints,
+      scoreA: p.match.status === 'FINISHED' ? p.match.scoreA : null,
+      scoreB: p.match.status === 'FINISHED' ? p.match.scoreB : null,
       createdAt: p.createdAt,
     };
   });

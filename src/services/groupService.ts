@@ -156,6 +156,8 @@ export const getLeaderboard = async (
 export const getGroupActivity = async (
   groupId: string,
   requestingUserId: string,
+  limit?: number,
+  offset?: number,
 ) => {
   // Verify membership
   const isMember = await groupRepo.isMember(groupId, requestingUserId);
@@ -163,5 +165,5 @@ export const getGroupActivity = async (
     throw new AppError('You are not a member of this group.', 403);
   }
 
-  return groupRepo.getGroupActivity(groupId);
+  return groupRepo.getGroupActivity(groupId, limit, offset);
 };
