@@ -15,6 +15,7 @@
  * ─────────────────────────────────────────────────────────────────
  */
 import axios, { AxiosError } from 'axios';
+import https from 'https';
 import * as matchRepo from '../repositories/matchRepository';
 import { calculatePoints } from './pointsEngine';
 import { env } from '../config/env';
@@ -312,12 +313,20 @@ export const syncMatches = async (): Promise<number> => {
       `${env.WC_API_BASE_URL}/games`,
     ];
 
+    const httpsAgent = new https.Agent({
+      rejectUnauthorized: false
+    });
+
     let fetchSuccess = false;
     for (const url of endpoints) {
       try {
         const response = await axios.get<WC26ApiResponse | WC26ApiMatch[]>(url, {
-          timeout: 10000,
-          headers: { 'Accept': 'application/json' },
+          timeout: 15000,
+          httpsAgent,
+          headers: { 
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json' 
+          },
         });
 
         // Handle both array and object responses
