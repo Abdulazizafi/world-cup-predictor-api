@@ -82,6 +82,71 @@ export const findUserGroup = async (
   return membership?.group ?? null;
 };
 
+export const getSheikhForRound = async (groupId: string): Promise<string | null> => {
+  // 1. Find the latest finished match
+  const latestFinishedMatch = await prisma.match.findFirst({
+    where: { status: 'FINISHED' },
+    orderBy: { matchTime: 'desc' },
+    select: { matchTime: true },
+  });
+  
+  if (!latestFinishedMatch) return null;
+  
+  // 2. Fetch matches finished within 24 hours of that match (defines the "round")
+  const roundMatches = await prisma.match.findMany({
+    where: {
+      status: 'FINISHED',
+      matchTime: {
+        gte: new Date(latestFinishedMatch.matchTime.getTime() - 24 * 60 * 60 * 1000),
+        lte: latestFinishedMatch.matchTime,
+      },
+    },
+    select: { id: true },
+  });
+  
+  const roundMatchIds = roundMatches.map(m => m.id);
+  if (roundMatchIds.length === 0) return null;
+  
+  // 3. Fetch group member IDs
+  const memberIds = await prisma.groupMember.findMany({
+    where: { groupId },
+    select: { userId: true },
+  });
+  const userIds = memberIds.map(m => m.userId);
+  if (userIds.length === 0) return null;
+  
+  // 4. Sum up points earned for predictions in roundMatches per user
+  const predictions = await prisma.prediction.findMany({
+    where: {
+      userId: { in: userIds },
+      matchId: { in: roundMatchIds },
+    },
+    select: {
+      userId: true,
+      pointsEarned: true,
+    },
+  });
+  
+  const pointsMap = new Map<string, number>();
+  userIds.forEach(uid => pointsMap.set(uid, 0));
+  predictions.forEach(p => {
+    pointsMap.set(p.userId, (pointsMap.get(p.userId) || 0) + p.pointsEarned);
+  });
+  
+  // 5. Find user with max points
+  let maxPoints = -1;
+  let sheikhId: string | null = null;
+  
+  for (const [uid, pts] of pointsMap.entries()) {
+    if (pts > maxPoints) {
+      maxPoints = pts;
+      sheikhId = uid;
+    }
+  }
+  
+  return sheikhId;
+};
+
 /**
  * Get all members of a group with their user details and total points.
  * Used for leaderboard calculation.
@@ -100,8 +165,18 @@ export const getLeaderboard = async (
     outcomeCount: number;
     incorrectCount: number;
     doubleUsed: number;
+    isSheikh?: boolean;
   }>
 > => {
+  // Fetch group active decree
+  const group = await prisma.group.findUnique({
+    where: { id: groupId },
+    select: {
+      activeDecreeType: true,
+      activeDecreeTargetId: true,
+    },
+  });
+
   // 1. Get latest finished match to compute rank shifts/trends
   const latestFinishedMatch = await prisma.match.findFirst({
     where: { status: 'FINISHED' },
@@ -119,7 +194,13 @@ export const getLeaderboard = async (
           predictions: {
             include: {
               match: {
-                select: { status: true },
+                select: {
+                  status: true,
+                  teamA: true,
+                  teamB: true,
+                  scoreA: true,
+                  scoreB: true,
+                },
               },
             },
           },
@@ -143,11 +224,31 @@ export const getLeaderboard = async (
         doubleUsed++;
       }
       if (p.match.status === 'FINISHED') {
-        totalPoints += p.pointsEarned;
+        let earned = p.pointsEarned;
+
+        // Apply Green Falcons Subsidy (+10 points)
+        if (
+          group?.activeDecreeType === 'GREEN_FALCONS' &&
+          (p.match.teamA === 'Saudi Arabia' || p.match.teamB === 'Saudi Arabia')
+        ) {
+          const predictedKsaWin =
+            (p.match.teamA === 'Saudi Arabia' && p.predictedScoreA > p.predictedScoreB) ||
+            (p.match.teamB === 'Saudi Arabia' && p.predictedScoreB > p.predictedScoreA);
+
+          const actualKsaWin =
+            (p.match.teamA === 'Saudi Arabia' && (p.match.scoreA ?? 0) > (p.match.scoreB ?? 0)) ||
+            (p.match.teamB === 'Saudi Arabia' && (p.match.scoreB ?? 0) > (p.match.scoreA ?? 0));
+
+          if (predictedKsaWin && actualKsaWin) {
+            earned += 10;
+          }
+        }
+
+        totalPoints += earned;
         if (latestMatchId && p.matchId === latestMatchId) {
           // Exclude latest match points for trend baseline
         } else {
-          prevPoints += p.pointsEarned;
+          prevPoints += earned;
         }
 
         if (p.pointsEarned === 100 || p.pointsEarned === 200) {
@@ -158,6 +259,12 @@ export const getLeaderboard = async (
           incorrectCount++;
         }
       }
+    }
+
+    // Apply Royal Pardon (+5 points to all league members)
+    if (group?.activeDecreeType === 'ROYAL_PARDON') {
+      totalPoints += 5;
+      prevPoints += 5;
     }
 
     return {
@@ -178,31 +285,44 @@ export const getLeaderboard = async (
     .map((entry, index) => ({ userId: entry.userId, rank: index + 1 }));
   const prevRankMap = new Map(prevRankings.map((r) => [r.userId, r.rank]));
 
-  // 5. Sort by current points and assign rank and trend
-  const leaderboard = memberData
-    .sort((a, b) => b.totalPoints - a.totalPoints)
-    .map((entry, index) => {
-      const currentRank = index + 1;
-      const prevRank = prevRankMap.get(entry.userId) || currentRank;
-      
-      let trend: 'UP' | 'DOWN' | 'SAME' = 'SAME';
-      if (latestMatchId) { // Only calculate trends if at least one match has finished
-        if (prevRank > currentRank) trend = 'UP';
-        else if (prevRank < currentRank) trend = 'DOWN';
-      }
-
-      return {
-        userId: entry.userId,
-        username: entry.username,
-        totalPoints: entry.totalPoints,
-        rank: currentRank,
-        trend,
-        exactCount: entry.exactCount,
-        outcomeCount: entry.outcomeCount,
-        incorrectCount: entry.incorrectCount,
-        doubleUsed: entry.doubleUsed,
-      };
+  // 5. Sort by current points and assign rank, trend, and isSheikh
+  const sortedMembers = [...memberData].sort((a, b) => b.totalPoints - a.totalPoints);
+  
+  let sheikhId = await getSheikhForRound(groupId);
+  if (!sheikhId && sortedMembers.length > 0) {
+    sheikhId = sortedMembers[0].userId;
+  }
+  
+  if (sheikhId) {
+    await prisma.group.update({
+      where: { id: groupId },
+      data: { sheikhUserId: sheikhId },
     });
+  }
+
+  const leaderboard = sortedMembers.map((entry, index) => {
+    const currentRank = index + 1;
+    const prevRank = prevRankMap.get(entry.userId) || currentRank;
+    
+    let trend: 'UP' | 'DOWN' | 'SAME' = 'SAME';
+    if (latestMatchId) { // Only calculate trends if at least one match has finished
+      if (prevRank > currentRank) trend = 'UP';
+      else if (prevRank < currentRank) trend = 'DOWN';
+    }
+
+    return {
+      userId: entry.userId,
+      username: entry.username,
+      totalPoints: entry.totalPoints,
+      rank: currentRank,
+      trend,
+      exactCount: entry.exactCount,
+      outcomeCount: entry.outcomeCount,
+      incorrectCount: entry.incorrectCount,
+      doubleUsed: entry.doubleUsed,
+      isSheikh: entry.userId === sheikhId,
+    };
+  });
 
   return leaderboard;
 };
@@ -220,21 +340,52 @@ export const getGroupActivity = async (
 ): Promise<
   Array<{
     username: string;
-    matchId: string;
-    teamA: string;
-    teamB: string;
-    matchTime: Date;
-    status: string;
-    predictedScoreA: number | null; // null = hidden (pre-kickoff)
-    predictedScoreB: number | null;
-    pointsEarned: number;
-    useDoublePoints: boolean;
-    scoreA: number | null;
-    scoreB: number | null;
+    matchId?: string;
+    teamA?: string;
+    teamB?: string;
+    matchTime?: Date;
+    status?: string;
+    predictedScoreA?: number | null; // null = hidden (pre-kickoff)
+    predictedScoreB?: number | null;
+    pointsEarned?: number;
+    useDoublePoints?: boolean;
+    scoreA?: number | null;
+    scoreB?: number | null;
     createdAt: Date;
+    isLoyaltyOath?: boolean;
+    commentText?: string;
+    sheikhName?: string;
   }>
 > => {
   const now = new Date();
+
+  // Fetch the group's active decree to see if we should inject the Loyalty Oath comment
+  const group = await prisma.group.findUnique({
+    where: { id: groupId },
+    select: {
+      activeDecreeType: true,
+      activeDecreeTargetId: true,
+      activeDecreeTargetName: true,
+      activeDecreeByName: true,
+      activeDecreeSigned: true,
+      activeDecreeComment: true,
+      activeDecreeAt: true,
+    },
+  });
+
+  const loyaltyOathItem =
+    group &&
+    group.activeDecreeType === 'LOYALTY_OATH' &&
+    group.activeDecreeSigned &&
+    (!userId || userId === group.activeDecreeTargetId)
+      ? {
+          username: group.activeDecreeTargetName!,
+          createdAt: group.activeDecreeAt || new Date(),
+          isLoyaltyOath: true,
+          commentText: group.activeDecreeComment || `Swore allegiance to Sheikh ${group.activeDecreeByName}`,
+          sheikhName: group.activeDecreeByName || 'Sheikh',
+        }
+      : null;
 
   const memberIds = await prisma.groupMember.findMany({
     where: { groupId },
@@ -265,7 +416,7 @@ export const getGroupActivity = async (
     skip: offset ?? 0,
   });
 
-  return predictions.map((p) => {
+  const mapped = predictions.map((p) => {
     // Hide exact scores if the match hasn't started yet (anti-cheat)
     const isUpcoming = p.match.matchTime > now;
 
@@ -285,14 +436,20 @@ export const getGroupActivity = async (
       createdAt: p.createdAt,
     };
   });
+
+  if (loyaltyOathItem && (!offset || offset === 0)) {
+    return [loyaltyOathItem, ...mapped];
+  }
+  return mapped;
 };
 
 /**
- * Fetch a user's predictions for matches that have already kicked off.
- * Used for head-to-head comparison without allowing anti-cheat bypass.
+ * Fetch a user's predictions.
+ * If showUpcoming is false, hides predictions for matches that haven't kicked off.
  */
 export const getUserPredictionsForComparison = async (
   userId: string,
+  showUpcoming: boolean = false,
 ): Promise<
   Array<{
     matchId: string;
@@ -307,7 +464,7 @@ export const getUserPredictionsForComparison = async (
   const predictions = await prisma.prediction.findMany({
     where: {
       userId,
-      match: {
+      match: showUpcoming ? undefined : {
         matchTime: { lte: now }, // only matches that have kicked off
       },
     },
@@ -396,4 +553,68 @@ export const getGroupInsights = async (
     maxPointsUsername,
     upsetMatch,
   };
+};
+
+export const isUserTransferBanned = async (userId: string): Promise<boolean> => {
+  const activeBan = await prisma.group.findFirst({
+    where: {
+      activeDecreeType: 'TRANSFER_BAN',
+      activeDecreeTargetId: userId,
+    },
+  });
+  return activeBan !== null;
+};
+
+export const updateGroupDecree = async (
+  groupId: string,
+  data: {
+    activeDecreeType: string | null;
+    activeDecreeTargetId: string | null;
+    activeDecreeTargetName: string | null;
+    activeDecreeBy: string | null;
+    activeDecreeByName: string | null;
+    activeDecreeAt: Date | null;
+    activeDecreeSigned?: boolean;
+    activeDecreeComment?: string | null;
+  }
+) => {
+  return prisma.group.update({
+    where: { id: groupId },
+    data,
+  });
+};
+
+export const getUsername = async (userId: string): Promise<string | null> => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { username: true },
+  });
+  return user?.username ?? null;
+};
+
+export const getActiveDecree = async (groupId: string) => {
+  const group = await prisma.group.findUnique({
+    where: { id: groupId },
+    select: {
+      activeDecreeType: true,
+      activeDecreeTargetId: true,
+      activeDecreeTargetName: true,
+      activeDecreeBy: true,
+      activeDecreeByName: true,
+      activeDecreeAt: true,
+      activeDecreeSigned: true,
+      activeDecreeComment: true,
+    },
+  });
+  if (!group || !group.activeDecreeType) return null;
+  return group;
+};
+
+export const getLatestFinishedMatchId = async (): Promise<string | null> => {
+  const match = await prisma.match.findFirst({
+    where: { status: 'FINISHED' },
+    orderBy: { matchTime: 'desc' },
+    select: { id: true },
+  });
+  return match?.id ?? null;
 };

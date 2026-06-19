@@ -10,6 +10,7 @@
  */
 import * as predictionRepo from '../repositories/predictionRepository';
 import * as matchRepo from '../repositories/matchRepository';
+import * as groupRepo from '../repositories/groupRepository';
 import { AppError } from '../errors/AppError';
 
 /**
@@ -59,6 +60,11 @@ export const submitOrUpdatePrediction = async (
 
   // Validate the Double Points limit (max 5 tokens)
   if (useDoublePoints === true) {
+    const isBanned = await groupRepo.isUserTransferBanned(userId);
+    if (isBanned) {
+      throw new AppError('You are banned from using double points by order of the Sheikh!', 400);
+    }
+
     const currentX2Count = await predictionRepo.countDoublePointsPredictions(userId, matchId);
     if (currentX2Count >= 5) {
       throw new AppError('You can only apply Double Points (x2) to a maximum of 5 matches.', 400);

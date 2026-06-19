@@ -34,4 +34,9 @@ router.get('/:groupId/compare/:userId', groupController.comparePredictions);
 // GET /api/groups/:groupId/insights
 router.get('/:groupId/insights', groupController.getGroupInsights);
 
+// Sheikh Decrees
+router.get('/:groupId/active-decree', groupController.getActiveDecree);
+router.post('/:groupId/decree', groupController.issueDecree);
+router.post('/:groupId/swear-allegiance', groupController.swearAllegiance);
+
 export default router;

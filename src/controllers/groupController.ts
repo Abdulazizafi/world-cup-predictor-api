@@ -156,3 +156,71 @@ export const getGroupInsights = async (
     next(err);
   }
 };
+
+export const getActiveDecree = async (
+  req: Request<{ groupId: string }>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const activeDecree = await groupService.getActiveDecree(
+      req.params.groupId,
+      req.user!.id,
+    );
+
+    res.status(200).json({
+      status: 'success',
+      data: { activeDecree },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const issueDecree = async (
+  req: Request<{ groupId: string }, any, { type: string; targetId?: string; comment?: string }>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const { type, targetId, comment } = req.body;
+    const result = await groupService.issueDecree(
+      req.params.groupId,
+      req.user!.id,
+      type,
+      targetId,
+      comment,
+    );
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Decree issued successfully!',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const swearAllegiance = async (
+  req: Request<{ groupId: string }, any, { comment?: string }>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const { comment } = req.body;
+    const result = await groupService.swearAllegiance(
+      req.params.groupId,
+      req.user!.id,
+      comment,
+    );
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Oath sworn successfully!',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};

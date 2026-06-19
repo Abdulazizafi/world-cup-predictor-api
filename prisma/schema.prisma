@@ -41,6 +41,17 @@ model Group {
   creatorId  String
   createdAt  DateTime      @default(now())
 
+  // Sheikh Decrees
+  activeDecreeType       String?
+  activeDecreeTargetId   String?
+  activeDecreeTargetName String?
+  activeDecreeBy         String?
+  activeDecreeByName     String?
+  activeDecreeAt         DateTime?
+  activeDecreeSigned     Boolean   @default(false)
+  activeDecreeComment    String?
+  sheikhUserId           String?
+
   // Relations
   creator    User          @relation("GroupCreator", fields: [creatorId], references: [id], onDelete: Cascade)
   members    GroupMember[]
