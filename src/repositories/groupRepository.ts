@@ -567,16 +567,16 @@ export const isUserTransferBanned = async (userId: string): Promise<boolean> => 
 
 export const updateGroupDecree = async (
   groupId: string,
-  data: {
+  data: Partial<{
     activeDecreeType: string | null;
     activeDecreeTargetId: string | null;
     activeDecreeTargetName: string | null;
     activeDecreeBy: string | null;
     activeDecreeByName: string | null;
     activeDecreeAt: Date | null;
-    activeDecreeSigned?: boolean;
-    activeDecreeComment?: string | null;
-  }
+    activeDecreeSigned: boolean;
+    activeDecreeComment: string | null;
+  }>
 ) => {
   return prisma.group.update({
     where: { id: groupId },
