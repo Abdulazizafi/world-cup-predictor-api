@@ -158,6 +158,7 @@ export const getGroupActivity = async (
   requestingUserId: string,
   limit?: number,
   offset?: number,
+  userId?: string,
 ) => {
   // Verify membership
   const isMember = await groupRepo.isMember(groupId, requestingUserId);
@@ -165,8 +166,18 @@ export const getGroupActivity = async (
     throw new AppError('You are not a member of this group.', 403);
   }
 
-  return groupRepo.getGroupActivity(groupId, limit, offset);
+  // If userId filter is provided, verify they are in the group
+  if (userId) {
+    const targetIsMember = await groupRepo.isMember(groupId, userId);
+    if (!targetIsMember) {
+      throw new AppError('The filtered user is not a member of this group.', 404);
+    }
+  }
+
+  return groupRepo.getGroupActivity(groupId, limit, offset, userId);
 };
+
+
 
 /**
  * Get dynamic comparison data of a target user's predictions for head-to-head views.

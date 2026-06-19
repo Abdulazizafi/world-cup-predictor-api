@@ -216,6 +216,7 @@ export const getGroupActivity = async (
   groupId: string,
   limit?: number,
   offset?: number,
+  userId?: string,
 ): Promise<
   Array<{
     username: string;
@@ -241,9 +242,10 @@ export const getGroupActivity = async (
   });
 
   const userIds = memberIds.map((m) => m.userId);
+  const filterUserIds = userId && userIds.includes(userId) ? [userId] : userIds;
 
   const predictions = await prisma.prediction.findMany({
-    where: { userId: { in: userIds } },
+    where: { userId: { in: filterUserIds } },
     include: {
       user: { select: { username: true } },
       match: {

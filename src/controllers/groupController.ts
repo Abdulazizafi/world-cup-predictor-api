@@ -82,19 +82,21 @@ export const getLeaderboard = async (
  * Exact scores are hidden for upcoming matches.
  */
 export const getGroupActivity = async (
-  req: Request<{ groupId: string }, any, any, { limit?: string; offset?: string }>,
+  req: Request<{ groupId: string }, any, any, { limit?: string; offset?: string; userId?: string }>,
   res: Response,
   next: NextFunction,
 ): Promise<void> => {
   try {
     const limit = req.query.limit ? parseInt(req.query.limit, 10) : undefined;
     const offset = req.query.offset ? parseInt(req.query.offset, 10) : undefined;
+    const userId = req.query.userId || undefined;
 
     const activity = await groupService.getGroupActivity(
       req.params.groupId,
       req.user!.id,
       limit,
       offset,
+      userId,
     );
 
     res.status(200).json({
