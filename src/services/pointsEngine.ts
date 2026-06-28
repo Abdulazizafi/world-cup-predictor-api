@@ -62,11 +62,10 @@ export const calculatePoints = async (
     externalId: match.externalId,
   });
 
-  const minProb = Math.min(probs.probA, probs.probB, probs.probDraw);
+  // Underdog is strictly the team (A or B) with the lower win probability
   const isActualOutcomeUnderdog =
-    (actualOutcome === 'A' && probs.probA === minProb) ||
-    (actualOutcome === 'B' && probs.probB === minProb) ||
-    (actualOutcome === 'D' && probs.probDraw === minProb);
+    (actualOutcome === 'A' && probs.probA < probs.probB) ||
+    (actualOutcome === 'B' && probs.probB < probs.probA);
 
   // 2. Score each prediction
   const updates = predictions.map((prediction) => {
