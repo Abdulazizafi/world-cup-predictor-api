@@ -15,32 +15,43 @@ export function hashString(str: string): number {
 }
 
 const TEAM_RATINGS: Record<string, number> = {
+  // Top Tier
   'ARGENTINA': 88,
   'FRANCE': 87,
   'BRAZIL': 87,
   'ENGLAND': 86,
   'SPAIN': 85,
   'PORTUGAL': 84,
-  'GERMANY': 83,
+  'GERMANY': 84,
+  'BELGIUM': 84,
+
+  // Mid Tier
   'NETHERLANDS': 83,
   'ITALY': 82,
-  'BELGIUM': 81,
   'URUGUAY': 81,
   'CROATIA': 80,
   'MOROCCO': 80,
   'USA': 78,
-  'MEXICO': 77,
   'JAPAN': 78,
+  'NORWAY': 78,
+  'MEXICO': 77,
   'SENEGAL': 77,
+  'SWEDEN': 77,
+  'AUSTRIA': 77,
   'SOUTH KOREA': 76,
+  'BOSNIA': 76,
   'CANADA': 75,
   'AUSTRALIA': 74,
+
+  // Underdogs
+  'COLOMBIA': 73,
   'SAUDI ARABIA': 72,
   'IRAN': 72,
+  'ECUADOR': 72,
+  'IVORY COAST': 72,
   'TUNISIA': 71,
-  'ECUADOR': 75,
-  'SWEDEN': 77,
-  'IVORY COAST': 74,
+  'PARAGUAY': 71,
+  'CONGO': 70,
   'CAPE VERDE': 70,
   'CURAÇAO': 68,
 };
