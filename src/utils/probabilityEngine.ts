@@ -78,23 +78,19 @@ export function getMatchProbabilities(match: {
   
   // Stable noise using match externalId hash
   const hashVal = hashString(match.externalId);
-  const noiseA = ((hashVal % 11) - 5) / 100; // -0.05 to +0.05
-  const noiseB = (((hashVal >> 4) % 11) - 5) / 100; // -0.05 to +0.05
+  const noise = ((hashVal % 11) - 5) / 100; // -0.05 to +0.05
   
-  let rawA = 0.38 + D * 0.015 + noiseA;
-  let rawB = 0.38 - D * 0.015 + noiseB;
-  let rawDraw = 0.24 - (noiseA + noiseB);
+  let rawA = 0.50 + D * 0.02 + noise;
+  let rawB = 0.50 - D * 0.02 - noise;
   
   // Clamps to ensure realistic ranges
-  rawA = Math.max(0.15, Math.min(0.80, rawA));
-  rawB = Math.max(0.15, Math.min(0.80, rawB));
-  rawDraw = Math.max(0.12, Math.min(0.40, rawDraw));
+  rawA = Math.max(0.20, Math.min(0.80, rawA));
+  rawB = Math.max(0.20, Math.min(0.80, rawB));
   
-  // Normalize
-  const total = rawA + rawB + rawDraw;
-  let probA = Math.round((rawA / total) * 100);
-  let probB = Math.round((rawB / total) * 100);
-  let probDraw = 100 - probA - probB;
+  // Normalize to 100%
+  const total = rawA + rawB;
+  const probA = Math.round((rawA / total) * 100);
+  const probB = 100 - probA;
   
-  return { probA, probB, probDraw };
+  return { probA, probB, probDraw: 0 };
 }
