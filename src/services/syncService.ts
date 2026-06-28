@@ -172,6 +172,24 @@ const parseScore = (score: string | number | null | undefined): number | null =>
   return isNaN(num) ? null : num;
 };
 
+const parseScoreAndPenalty = (
+  scoreStr: string | number | null | undefined
+): { score: number | null; penalty: number | null } => {
+  if (scoreStr === null || scoreStr === undefined || scoreStr === 'null' || scoreStr === '') {
+    return { score: null, penalty: null };
+  }
+  const str = String(scoreStr).trim();
+  // Match formats like "1 (4)" or "1"
+  const match = str.match(/^(\d+)(?:\s*\(\s*(\d+)\s*\))?$/);
+  if (match) {
+    const score = parseInt(match[1], 10);
+    const penalty = match[2] ? parseInt(match[2], 10) : null;
+    return { score, penalty };
+  }
+  const num = Number(str);
+  return { score: isNaN(num) ? null : num, penalty: null };
+};
+
 const normaliseStatus = (match: WC26ApiMatch): string => {
   const finishedVal = String(match.finished).toUpperCase();
   const elapsed = match.time_elapsed ? match.time_elapsed.toLowerCase() : '';
@@ -415,8 +433,22 @@ export const syncMatches = async (): Promise<number> => {
   for (const apiMatch of apiMatches) {
     const externalId = String(apiMatch.id);
     const newStatus = normaliseStatus(apiMatch);
-    const scoreA = parseScore(apiMatch.home_score);
-    const scoreB = parseScore(apiMatch.away_score);
+    
+    // Parse regular and penalty scores
+    const parsedA = parseScoreAndPenalty(apiMatch.home_score);
+    const parsedB = parseScoreAndPenalty(apiMatch.away_score);
+    const scoreA = parsedA.score;
+    const scoreB = parsedB.score;
+    const penaltyScoreA = parsedA.penalty;
+    const penaltyScoreB = parsedB.penalty;
+
+    // Determine penalty winner if a shootout occurred
+    let penaltyWinner: string | null = null;
+    if (penaltyScoreA !== null && penaltyScoreB !== null) {
+      if (penaltyScoreA > penaltyScoreB) penaltyWinner = 'A';
+      else if (penaltyScoreB > penaltyScoreA) penaltyWinner = 'B';
+    }
+
     const matchTime = parseMatchTime(apiMatch);
     const teamA = getTeamName(apiMatch, 'home');
     const teamB = getTeamName(apiMatch, 'away');
@@ -433,6 +465,9 @@ export const syncMatches = async (): Promise<number> => {
     let finalStatus = newStatus;
     let finalScoreA = scoreA;
     let finalScoreB = scoreB;
+    let finalPenaltyScoreA = penaltyScoreA;
+    let finalPenaltyScoreB = penaltyScoreB;
+    let finalPenaltyWinner = penaltyWinner;
 
     if (existing) {
       if (existing.status === 'FINISHED') {
@@ -440,12 +475,18 @@ export const syncMatches = async (): Promise<number> => {
           finalStatus = 'FINISHED';
           finalScoreA = existing.scoreA;
           finalScoreB = existing.scoreB;
+          finalPenaltyScoreA = (existing as any).penaltyScoreA;
+          finalPenaltyScoreB = (existing as any).penaltyScoreB;
+          finalPenaltyWinner = (existing as any).penaltyWinner;
         }
       } else if (existing.status === 'LIVE') {
         if (newStatus === 'PENDING') {
           finalStatus = 'LIVE';
           finalScoreA = existing.scoreA;
           finalScoreB = existing.scoreB;
+          finalPenaltyScoreA = (existing as any).penaltyScoreA;
+          finalPenaltyScoreB = (existing as any).penaltyScoreB;
+          finalPenaltyWinner = (existing as any).penaltyWinner;
         }
       }
     }
@@ -456,6 +497,9 @@ export const syncMatches = async (): Promise<number> => {
       const statusMatches = existing.status === finalStatus;
       const scoreAMatches = existing.scoreA === finalScoreA;
       const scoreBMatches = existing.scoreB === finalScoreB;
+      const penAMatches = (existing as any).penaltyScoreA === finalPenaltyScoreA;
+      const penBMatches = (existing as any).penaltyScoreB === finalPenaltyScoreB;
+      const penWinnerMatches = (existing as any).penaltyWinner === finalPenaltyWinner;
       const teamAMatches = existing.teamA === teamA;
       const teamBMatches = existing.teamB === teamB;
       const flagAMatches = existing.teamAFlag === teamAFlag;
@@ -468,6 +512,9 @@ export const syncMatches = async (): Promise<number> => {
         statusMatches &&
         scoreAMatches &&
         scoreBMatches &&
+        penAMatches &&
+        penBMatches &&
+        penWinnerMatches &&
         teamAMatches &&
         teamBMatches &&
         flagAMatches &&
@@ -491,6 +538,9 @@ export const syncMatches = async (): Promise<number> => {
       status: finalStatus,
       scoreA: finalScoreA,
       scoreB: finalScoreB,
+      penaltyScoreA: finalPenaltyScoreA,
+      penaltyScoreB: finalPenaltyScoreB,
+      penaltyWinner: finalPenaltyWinner,
       stage,
       venue,
     });

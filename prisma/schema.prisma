@@ -83,18 +83,21 @@ model GroupMember {
 // externalId links to the upstream API's match identifier.
 // ─────────────────────────────────────────────────────────────────
 model Match {
-  id          String       @id @default(uuid())
-  externalId  String       @unique           // worldcup26.ir match ID for upserts
-  teamA       String                         // e.g. "USA"
-  teamB       String                         // e.g. "Mexico"
-  teamAFlag   String?                        // emoji or URL flag
-  teamBFlag   String?
-  matchTime   DateTime                       // UTC kickoff timestamp
-  status      String       @default("PENDING") // PENDING | LIVE | FINISHED
-  scoreA      Int?                           // null until FINISHED
-  scoreB      Int?
-  stage       String                         // "Group Stage", "Round of 16", etc.
-  venue       String?                        // Stadium name
+  id            String       @id @default(uuid())
+  externalId    String       @unique           // worldcup26.ir match ID for upserts
+  teamA         String                         // e.g. "USA"
+  teamB         String                         // e.g. "Mexico"
+  teamAFlag     String?                        // emoji or URL flag
+  teamBFlag     String?
+  matchTime     DateTime                       // UTC kickoff timestamp
+  status        String       @default("PENDING") // PENDING | LIVE | FINISHED
+  scoreA        Int?                           // null until FINISHED
+  scoreB        Int?
+  penaltyScoreA Int?
+  penaltyScoreB Int?
+  penaltyWinner String?                        // "A" | "B" | null
+  stage         String                         // "Group Stage", "Round of 16", etc.
+  venue         String?                        // Stadium name
 
   // Relations
   predictions Prediction[]
@@ -117,6 +120,7 @@ model Prediction {
   predictedScoreB Int                        // Predicted goals for Team B
   pointsEarned    Int      @default(0)       // 0 | 40 | 100 — set by pointsEngine
   useDoublePoints Boolean  @default(false)
+  penaltyWinner   String?                    // "A" | "B" | null
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt        // Auto-managed by Prisma
 

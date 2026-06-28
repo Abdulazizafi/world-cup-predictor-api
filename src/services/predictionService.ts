@@ -32,6 +32,7 @@ export const submitOrUpdatePrediction = async (
   predictedScoreA: number,
   predictedScoreB: number,
   useDoublePoints?: boolean,
+  penaltyWinner?: string | null,
 ) => {
   // 1. Resolve the match
   const match = await matchRepo.findMatchById(matchId);
@@ -78,6 +79,7 @@ export const submitOrUpdatePrediction = async (
     predictedScoreA,
     predictedScoreB,
     useDoublePoints,
+    penaltyWinner,
   });
 
   return {
@@ -87,6 +89,7 @@ export const submitOrUpdatePrediction = async (
     predictedScoreB: prediction.predictedScoreB,
     pointsEarned: prediction.pointsEarned,
     useDoublePoints: prediction.useDoublePoints,
+    penaltyWinner: prediction.penaltyWinner,
     createdAt: prediction.createdAt,
     updatedAt: prediction.updatedAt,
     match: {

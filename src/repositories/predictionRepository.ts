@@ -32,6 +32,7 @@ export const upsertPrediction = async (data: {
   predictedScoreA: number;
   predictedScoreB: number;
   useDoublePoints?: boolean;
+  penaltyWinner?: string | null;
 }): Promise<Prediction> => {
   return prisma.prediction.upsert({
     where: { userId_matchId: { userId: data.userId, matchId: data.matchId } },
@@ -39,6 +40,7 @@ export const upsertPrediction = async (data: {
       predictedScoreA: data.predictedScoreA,
       predictedScoreB: data.predictedScoreB,
       useDoublePoints: data.useDoublePoints,
+      penaltyWinner: data.penaltyWinner,
     },
     create: {
       userId: data.userId,
@@ -46,6 +48,7 @@ export const upsertPrediction = async (data: {
       predictedScoreA: data.predictedScoreA,
       predictedScoreB: data.predictedScoreB,
       useDoublePoints: data.useDoublePoints ?? false,
+      penaltyWinner: data.penaltyWinner,
     },
   });
 };

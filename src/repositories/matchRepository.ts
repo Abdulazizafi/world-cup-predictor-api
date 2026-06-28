@@ -6,6 +6,7 @@
  * ─────────────────────────────────────────────────────────────────
  */
 import { PrismaClient, Match } from '@prisma/client';
+import { getMatchProbabilities } from '../utils/probabilityEngine';
 
 const prisma = new PrismaClient();
 
@@ -40,7 +41,12 @@ export const getAllMatches = async (
         predictedScoreA: number;
         predictedScoreB: number;
         pointsEarned: number;
+        useDoublePoints: boolean;
+        penaltyWinner: string | null;
       } | null;
+      probA: number;
+      probB: number;
+      probDraw: number;
     }
   >
 > => {
@@ -55,6 +61,7 @@ export const getAllMatches = async (
               predictedScoreB: true,
               pointsEarned: true,
               useDoublePoints: true,
+              penaltyWinner: true,
             },
           },
         }
@@ -64,13 +71,23 @@ export const getAllMatches = async (
   // Flatten the predictions array into a single userPrediction object
   return matches.map((match) => {
     const predictions =
-      (match as Match & { predictions?: { predictedScoreA: number; predictedScoreB: number; pointsEarned: number }[] })
+      (match as Match & { predictions?: any[] })
         .predictions ?? [];
     const { predictions: _p, ...matchWithoutPredictions } = match as Match & { predictions?: unknown[] };
     void _p;
+
+    const probs = getMatchProbabilities({
+      teamA: match.teamA,
+      teamB: match.teamB,
+      externalId: match.externalId,
+    });
+
     return {
       ...matchWithoutPredictions,
       userPrediction: predictions.length > 0 ? predictions[0] : null,
+      probA: probs.probA,
+      probB: probs.probB,
+      probDraw: probs.probDraw,
     };
   });
 };
@@ -89,6 +106,9 @@ export const upsertMatch = async (data: {
   status: string;
   scoreA?: number | null;
   scoreB?: number | null;
+  penaltyScoreA?: number | null;
+  penaltyScoreB?: number | null;
+  penaltyWinner?: string | null;
   stage: string;
   venue?: string | null;
 }): Promise<Match> => {
@@ -98,6 +118,9 @@ export const upsertMatch = async (data: {
       status: data.status,
       scoreA: data.scoreA,
       scoreB: data.scoreB,
+      penaltyScoreA: data.penaltyScoreA,
+      penaltyScoreB: data.penaltyScoreB,
+      penaltyWinner: data.penaltyWinner,
       matchTime: data.matchTime,
       teamA: data.teamA,
       teamB: data.teamB,

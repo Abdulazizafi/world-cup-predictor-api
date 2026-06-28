@@ -19,7 +19,7 @@ export const submitPrediction = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const { matchId, predictedScoreA, predictedScoreB, useDoublePoints } = req.body;
+    const { matchId, predictedScoreA, predictedScoreB, useDoublePoints, penaltyWinner } = req.body;
 
     const prediction = await predictionService.submitOrUpdatePrediction(
       req.user!.id,
@@ -27,6 +27,7 @@ export const submitPrediction = async (
       predictedScoreA,
       predictedScoreB,
       useDoublePoints,
+      penaltyWinner,
     );
 
     res.status(201).json({

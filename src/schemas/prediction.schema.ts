@@ -31,6 +31,8 @@ export const SubmitPredictionSchema = z.object({
     .max(30, 'Score seems unrealistically high.'),
 
   useDoublePoints: z.boolean().optional(),
+
+  penaltyWinner: z.enum(['A', 'B']).nullable().optional(),
 });
 
 // Inferred TypeScript type

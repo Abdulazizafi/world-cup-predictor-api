@@ -14,6 +14,8 @@
  * ─────────────────────────────────────────────────────────────────
  */
 import * as predictionRepo from '../repositories/predictionRepository';
+import * as matchRepo from '../repositories/matchRepository';
+import { getMatchProbabilities } from '../utils/probabilityEngine';
 
 /**
  * Determines the match outcome from a score pair.
@@ -37,7 +39,13 @@ export const calculatePoints = async (
   actualScoreA: number,
   actualScoreB: number,
 ): Promise<{ updated: number; totalPoints: number }> => {
-  // 1. Fetch all predictions for this match
+  // 1. Fetch the match and all predictions
+  const match = await matchRepo.findMatchById(matchId);
+  if (!match) {
+    console.warn(`⚙️  Points Engine: Match ${matchId} not found in database. Skipping.`);
+    return { updated: 0, totalPoints: 0 };
+  }
+
   const predictions = await predictionRepo.findPredictionsByMatchId(matchId);
 
   if (predictions.length === 0) {
@@ -46,6 +54,19 @@ export const calculatePoints = async (
   }
 
   const actualOutcome = getOutcome(actualScoreA, actualScoreB);
+
+  // Calculate probabilities to determine if the outcome is an underdog win
+  const probs = getMatchProbabilities({
+    teamA: match.teamA,
+    teamB: match.teamB,
+    externalId: match.externalId,
+  });
+
+  const minProb = Math.min(probs.probA, probs.probB, probs.probDraw);
+  const isActualOutcomeUnderdog =
+    (actualOutcome === 'A' && probs.probA === minProb) ||
+    (actualOutcome === 'B' && probs.probB === minProb) ||
+    (actualOutcome === 'D' && probs.probDraw === minProb);
 
   // 2. Score each prediction
   const updates = predictions.map((prediction) => {
@@ -66,7 +87,21 @@ export const calculatePoints = async (
       // Good: correct winner/draw but wrong scores
       pointsEarned = 40;
     }
-    // else: wrong outcome → 0 points (already initialised)
+
+    // Apply Knockout Penalties Shootout Scoring Rule
+    if (pointsEarned > 0 && match.penaltyWinner) {
+      // Halve points if user predicted a draw but guessed the wrong penalty winner
+      if (predictedOutcome === 'D') {
+        if (prediction.penaltyWinner !== match.penaltyWinner) {
+          pointsEarned = Math.round(pointsEarned / 2); // 100 -> 50, 40 -> 20
+        }
+      }
+    }
+
+    // Apply Underdog Win Bonus (+20 pts)
+    if (pointsEarned > 0 && isActualOutcomeUnderdog) {
+      pointsEarned += 20;
+    }
 
     // Double the points if X2 was used on this prediction
     if (prediction.useDoublePoints) {
